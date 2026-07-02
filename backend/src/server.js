@@ -27,14 +27,14 @@ server = app.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`);
 });
 
-// Handle unhandled promise rejections
+
 process.on('unhandledRejection', (err) => {
   logger.error('UNHANDLED REJECTION! Shutting down server...');
   logger.error(err);
   shutdown(1);
 });
 
-// Handle uncaught exceptions
+
 process.on('uncaughtException', (err) => {
   logger.error('UNCAUGHT EXCEPTION! Shutting down server...');
   logger.error(err);

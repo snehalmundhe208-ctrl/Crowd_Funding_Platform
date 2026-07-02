@@ -20,11 +20,11 @@ const calculateUserTrustScore = async (userId) => {
     }
   });
 
-  if (!user) return 70; // Default
+  if (!user) return 70; 
 
   let score = 70;
 
-  // KYC Status
+  
   if (user.kyc) {
     if (user.kyc.status === 'APPROVED') {
       score += 15;
@@ -32,15 +32,15 @@ const calculateUserTrustScore = async (userId) => {
       score -= 10;
     }
   } else {
-    score -= 5; // Not submitted
+    score -= 5; 
   }
 
-  // Verification Badge
+  
   if (user.isVerified) {
     score += 10;
   }
 
-  // Campaign statistics
+
   if (user.campaigns.length > 0) {
     let completedCount = 0;
     let successfulCount = 0;
@@ -52,11 +52,11 @@ const calculateUserTrustScore = async (userId) => {
       totalUpdates += campaign.updates.length;
       totalFraudFlags += campaign.fraudFlagsCount;
       
-      // Count resolved reports for this campaign
+      
       const resolvedReports = campaign.reports.filter(r => r.status === 'RESOLVED');
       resolvedReportsCount += resolvedReports.length;
 
-      // Check if campaign was successful (met goal and expired/completed)
+     
       const now = new Date();
       const isExpired = new Date(campaign.deadline) < now;
       const raised = Number(campaign.raisedAmount);
@@ -70,7 +70,7 @@ const calculateUserTrustScore = async (userId) => {
       }
     });
 
-    // Campaign success rate
+    
     if (completedCount > 0) {
       const rate = successfulCount / completedCount;
       if (rate >= 0.8) {
@@ -80,23 +80,23 @@ const calculateUserTrustScore = async (userId) => {
       }
     }
 
-    // Updates activity (average updates per campaign)
+    
     const avgUpdates = totalUpdates / user.campaigns.length;
     if (avgUpdates >= 2) {
       score += 5;
     }
 
-    // Deduct resolved reports and fraud flags
+    
     score -= (resolvedReportsCount * 10);
     score -= (totalFraudFlags * 15);
   }
 
-  // Donor activity (supporting others)
+  
   if (user.donations.length > 0) {
     score += 5;
   }
 
-  // Boundaries
+  
   return Math.max(0, Math.min(100, score));
 };
 
@@ -119,24 +119,23 @@ const calculateCampaignTrustScore = async (campaignId) => {
 
   const creatorTrustScore = await calculateUserTrustScore(campaign.creatorId);
 
-  // 70% weight of Creator's Trust Score
+ 
   let score = creatorTrustScore * 0.7;
 
-  // Reward Tiers (indicates planning)
+  
   if (campaign.rewards.length >= 3) {
     score += 5;
   }
 
-  // Updates posted
+
   if (campaign.updates.length >= 1) {
     score += 5;
   }
 
-  // Active reports
+ 
   const activeReportsCount = campaign.reports.filter(r => r.status === 'PENDING').length;
   score -= (activeReportsCount * 10);
 
-  // Fraud flags
   if (campaign.fraudFlagsCount > 2) {
     score -= 20;
   }

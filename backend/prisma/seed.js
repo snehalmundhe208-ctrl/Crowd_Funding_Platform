@@ -42,7 +42,7 @@ const createSeedReceiptPdf = async (receiptNo, campaignTitle, donorName, amount)
 async function main() {
   console.log('Clearing database...');
   ensureDir(receiptsDir);
-  // Delete in correct relational dependency order
+  
   await prisma.userBadge.deleteMany();
   await prisma.badge.deleteMany();
   await prisma.adminLog.deleteMany();
@@ -67,7 +67,7 @@ async function main() {
   const salt = bcrypt.genSaltSync(10);
   const defaultPasswordHash = bcrypt.hashSync('password123', salt);
 
-  // 1. Create Admin
+  
   const adminUser = await prisma.user.create({
     data: {
       email: 'admin@crowdflow.com',
@@ -79,7 +79,7 @@ async function main() {
     }
   });
 
-  // 2. Create Creators
+
   const creator1 = await prisma.user.create({
     data: {
       email: 'creator1@crowdflow.com',
@@ -138,7 +138,7 @@ async function main() {
     }
   });
 
-  // 3. Create Donors
+ 
   const donorNames = ['John Doe', 'Jane Smith', 'Alice Johnson', 'Robert Miller', 'Emily Davis'];
   const donors = [];
   for (let i = 0; i < donorNames.length; i++) {
@@ -155,7 +155,7 @@ async function main() {
     donors.push(donor);
   }
 
-  // 4. Create Categories
+
   const categoryNames = [
     { name: 'Technology', slug: 'technology', description: 'Tech gadgets, hardware, software, and innovative designs.' },
     { name: 'Creative Arts', slug: 'creative-arts', description: 'Films, music albums, books, design, and physical visual art.' },
@@ -171,8 +171,7 @@ async function main() {
     categories.push(category);
   }
 
-  // 5. Create Campaigns
-  // Campaign 1 - Alex Rivera Tech
+ 
   const campaign1 = await prisma.campaign.create({
     data: {
       title: 'AeroRing: The Ultimate Minimalist Smart Ring',
@@ -180,7 +179,7 @@ async function main() {
       imageUrl: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?w=800',
       goalAmount: 25000.00,
       raisedAmount: 18500.00,
-      deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+      deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
       status: 'ACTIVE',
       creatorId: creator1.id,
       categoryId: categories[0].id,
@@ -195,7 +194,7 @@ async function main() {
     }
   });
 
-  // Campaign 2 - Marcus Chen Community
+  
   const campaign2 = await prisma.campaign.create({
     data: {
       title: 'Urban Oasis: Green Rooftop Community Gardens',
@@ -203,7 +202,7 @@ async function main() {
       imageUrl: 'https://images.unsplash.com/photo-1530595467537-0b5996c41f2d?w=800',
       goalAmount: 10000.00,
       raisedAmount: 9200.00,
-      deadline: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days from now
+      deadline: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), 
       status: 'ACTIVE',
       creatorId: creator2.id,
       categoryId: categories[2].id,
@@ -218,7 +217,7 @@ async function main() {
     }
   });
 
-  // Campaign 3 - Elena Rostova Art (Pending)
+ 
   const campaign3 = await prisma.campaign.create({
     data: {
       title: 'Whispering Winds: A Cinematic Anthology Film',
@@ -241,15 +240,14 @@ async function main() {
     }
   });
 
-  // Campaign 4 - Alex Rivera Medical
   const campaign4 = await prisma.campaign.create({
     data: {
       title: 'OpenHand: Accessible High-Precision Prosthetics',
       description: 'Developing affordable, open-source 3D-printable bionic arms with custom haptic feedback nodes. Designed to make high-dexterity prostheses affordable for low-income families worldwide.',
       imageUrl: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800',
       goalAmount: 40000.00,
-      raisedAmount: 41200.00, // Goal met!
-      deadline: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // Expired 2 days ago
+      raisedAmount: 41200.00, 
+      deadline: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), 
       status: 'COMPLETED',
       creatorId: creator1.id,
       categoryId: categories[3].id,
@@ -264,7 +262,7 @@ async function main() {
     }
   });
 
-  // 6. Create Badges
+
   const firstContributionBadge = await prisma.badge.create({
     data: {
       name: 'First Contribution',
@@ -289,12 +287,12 @@ async function main() {
     }
   });
 
-  // 7. Seed Donations, Payments, and Receipts
+  
   const rec1Size = await createSeedReceiptPdf('REC-SEED-001', campaign1.title, donors[0].name, 1000);
   const rec2Size = await createSeedReceiptPdf('REC-SEED-002', campaign1.title, 'Anonymous Donor', 250);
   const rec3Size = await createSeedReceiptPdf('REC-SEED-003', campaign2.title, donors[2].name, 5000);
 
-  // Donation 1: Donor 1 to Campaign 1
+  
   const don1 = await prisma.donation.create({
     data: {
       amount: 1000.00,
@@ -326,7 +324,7 @@ async function main() {
     data: { userId: donors[0].id, badgeId: superDonorBadge.id }
   });
 
-  // Donation 2: Donor 2 to Campaign 1
+ 
   const don2 = await prisma.donation.create({
     data: {
       amount: 250.00,
@@ -355,7 +353,7 @@ async function main() {
     data: { userId: donors[1].id, badgeId: firstContributionBadge.id }
   });
 
-  // Donation 3: Donor 3 to Campaign 2
+ 
   const don3 = await prisma.donation.create({
     data: {
       amount: 5000.00,
@@ -387,7 +385,7 @@ async function main() {
     data: { userId: donors[2].id, badgeId: superDonorBadge.id }
   });
 
-  // 8. Follows
+
   await prisma.follow.create({
     data: { followerId: donors[0].id, creatorId: creator1.id }
   });
@@ -395,7 +393,7 @@ async function main() {
     data: { followerId: donors[1].id, creatorId: creator1.id }
   });
 
-  // 9. Comments & Likes
+
   await prisma.comment.create({
     data: {
       content: 'This smart ring is exactly what the biohacking community has been waiting for. Supported!',
@@ -419,7 +417,7 @@ async function main() {
     data: { campaignId: campaign1.id, userId: donors[1].id }
   });
 
-  // 10. Updates
+
   await prisma.campaignUpdate.create({
     data: {
       title: 'AeroRing Carbon Mold Testing: Complete Success',
@@ -428,7 +426,7 @@ async function main() {
     }
   });
 
-  // 11. Notifications
+
   await prisma.notification.create({
     data: {
       userId: creator1.id,
