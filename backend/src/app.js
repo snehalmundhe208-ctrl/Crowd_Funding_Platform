@@ -1,0 +1,68 @@
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const path = require('path');
+const logger = require('./config/logger');
+const errorHandler = require('./middleware/errorHandler');
+
+// Route Imports
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes');
+const campaignRoutes = require('./routes/campaignRoutes');
+const donationRoutes = require('./routes/donationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+
+const app = express();
+
+// Config CORS
+const allowedOrigins = Array.from(new Set([
+  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map(origin => origin.trim()).filter(Boolean) : []),
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+]));
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
+
+// Logger HTTP Requests
+app.use(morgan('dev', {
+  stream: {
+    write: (message) => logger.info(message.trim())
+  }
+}));
+
+// Body Parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Static Assets
+const uploadDir = process.env.UPLOAD_PATH || 'uploads/';
+const receiptsDir = 'receipts/';
+app.use('/uploads', express.static(path.join(__dirname, '../', uploadDir)));
+app.use('/receipts', express.static(path.join(__dirname, '../', receiptsDir)));
+
+// REST Route Endpoints
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/campaigns', campaignRoutes);
+app.use('/api/donations', donationRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ success: true, status: 'healthy', timestamp: new Date() });
+});
+
+// Centralized Error Handling Middleware
+app.use(errorHandler);
+
+module.exports = app;

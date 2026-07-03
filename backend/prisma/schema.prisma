@@ -1,13 +1,362 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  CREATOR
+  DONOR
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CampaignStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum NotificationType {
+  INFO
+  CAMPAIGN_UPDATE
+  DONATION_RECEIVED
+  KYC_STATUS
+  CAMPAIGN_STATUS
+  BADGE_EARNED
+  SYSTEM
+}
+
+model User {
+  id               String         @id @default(uuid())
+  email            String         @unique
+  passwordHash     String
+  name             String
+  role             Role           @default(DONOR)
+  avatar           String?
+  isVerified       Boolean        @default(false)
+  isSuspended      Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  kyc              Kyc?           @relation("UserKyc")
+  kycReviews       Kyc[]          @relation("KycReviewer")
+  campaigns        Campaign[]     @relation("CreatedCampaigns")
+  donations        Donation[]
+  comments         Comment[]
+  likes            Like[]
+  bookmarks        Bookmark[]
+  shares           CampaignShare[]
+  notifications    Notification[]
+  following        Follow[]       @relation("FollowerRelation")
+  followers        Follow[]       @relation("CreatorRelation")
+  badges           UserBadge[]
+  adminLogs        AdminLog[]     @relation("AdminActionLogs")
+  reportsSubmitted Report[]       @relation("UserReports")
+
+  @@index([email])
+  @@index([role])
+}
+
+model Kyc {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  user            User      @relation("UserKyc", fields: [userId], references: [id], onDelete: Cascade)
+  documentType    String    // e.g. 'PASSPORT', 'NATIONAL_ID', 'DRIVING_LICENSE'
+  documentUrl     String    // path to local uploaded file
+  status          KycStatus @default(PENDING)
+  rejectionReason String?
+  submittedAt     DateTime  @default(now())
+  
+  reviewedBy      String?
+  reviewer        User?     @relation("KycReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+  campaigns   Campaign[]
+
+  @@index([slug])
+}
+
+model Campaign {
+  id               String         @id @default(uuid())
+  title            String
+  description      String
+  imageUrl         String
+  goalAmount       Decimal        @db.Decimal(12, 2)
+  raisedAmount     Decimal        @default(0) @db.Decimal(12, 2)
+  deadline         DateTime
+  status           CampaignStatus @default(PENDING)
+  fraudFlagsCount  Int            @default(0)
+  isFeatured       Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  // Relations
+  creatorId        String
+  creator          User           @relation("CreatedCampaigns", fields: [creatorId], references: [id], onDelete: Cascade)
+  categoryId       String
+  category         Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  rewards          RewardTier[]
+  donations        Donation[]
+  updates          CampaignUpdate[]
+  comments         Comment[]
+  likes            Like[]
+  bookmarks        Bookmark[]
+  shares           CampaignShare[]
+  reports          Report[]
+
+  @@index([creatorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model RewardTier {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  minAmount   Decimal  @db.Decimal(12, 2)
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model Donation {
+  id          String   @id @default(uuid())
+  amount      Decimal  @db.Decimal(12, 2)
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  donorId     String
+  donor       User     @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  receipt     Receipt?
+  payment     Payment?
+  certificate ContributionCertificate?
+
+  @@index([campaignId])
+  @@index([donorId])
+  @@index([createdAt])
+}
+
+model Receipt {
+  id         String   @id @default(uuid())
+  receiptNo  String   @unique
+  pdfPath    String
+  fileSize   Int
+  createdAt  DateTime @default(now())
+
+  // Relations
+  donationId String   @unique
+  donation   Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  donationId    String        @unique
+  donation      Donation      @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  paymentMethod String        // e.g. 'CARD', 'UPI', 'PAYPAL'
+  transactionId String        @unique
+  paymentStatus PaymentStatus @default(PENDING)
+  amount        Decimal       @db.Decimal(12, 2)
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@index([donationId])
+  @@index([transactionId])
+}
+
+model CampaignUpdate {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  createdAt   DateTime @default(now())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model Comment {
+  id          String   @id @default(uuid())
+  content     String
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Comment[] @relation("CommentReplies")
+
+  @@index([campaignId])
+  @@index([userId])
+  @@index([parentId])
+}
+
+model Like {
+  id         String   @id @default(uuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@index([userId])
+}
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId])
+  @@index([userId])
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("FollowerRelation", fields: [followerId], references: [id], onDelete: Cascade)
+  creatorId   String
+  creator     User     @relation("CreatorRelation", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, creatorId])
+  @@index([followerId])
+  @@index([creatorId])
+}
+
+model CampaignShare {
+  id         String   @id @default(uuid())
+  channel    String?
+  createdAt  DateTime @default(now())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  title       String
+  message     String
+  type        NotificationType @default(INFO)
+  redirectUrl String?
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  readAt      DateTime?
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Report {
+  id          String       @id @default(uuid())
+  reason      String
+  description String?
+  status      ReportStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  resolvedAt  DateTime?
+
+  // Relations
+  campaignId  String
+  campaign    Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  reporterId  String
+  reporter    User         @relation("UserReports", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([reporterId])
+  @@index([status])
+}
+
+model AdminLog {
+  id          String   @id @default(uuid())
+  action      String
+  details     String
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  adminId     String
+  admin       User     @relation("AdminActionLogs", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model Badge {
+  id          String      @id @default(uuid())
+  name        String      @unique
+  description String
+  icon        String      // e.g., 'shield', 'award', 'heart'
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model ContributionCertificate {
+  id            String   @id @default(uuid())
+  certificateNo String   @unique
+  pdfPath       String
+  fileSize      Int
+  createdAt     DateTime @default(now())
+  donationId    String   @unique
+  donation      Donation @relation(fields: [donationId], references: [id], onDelete: Cascade)
 }
