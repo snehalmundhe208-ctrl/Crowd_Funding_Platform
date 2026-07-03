@@ -37,7 +37,13 @@ const AdminDashboard = () => {
       const res = await api.get(url, { responseType: 'blob' });
       const contentType = res.headers['content-type'] || 'application/octet-stream';
       const blobUrl = URL.createObjectURL(new Blob([res.data], { type: contentType }));
-      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to open document.');

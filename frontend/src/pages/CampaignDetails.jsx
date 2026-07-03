@@ -9,7 +9,7 @@ import {
 
 const CampaignDetails = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [campaign, setCampaign] = useState(null);
@@ -168,7 +168,13 @@ const CampaignDetails = () => {
     try {
       const res = await api.get(url, { responseType: 'blob' });
       const blobUrl = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     } catch (err) {
       setDonationError(err.response?.data?.error || 'Unable to open PDF.');
@@ -178,7 +184,7 @@ const CampaignDetails = () => {
   };
 
   const openDonationFlow = (reward = null) => {
-    if (!user) return navigate('/login');
+    if (!user && !authLoading) return navigate('/login');
     setSelectedReward(reward);
     setDonationAmount(reward ? String(reward.minAmount) : '10');
     setDonationError('');
@@ -190,7 +196,7 @@ const CampaignDetails = () => {
   const handleDonationSubmit = async () => {
     const amountValue = Number(donationAmount);
 
-    if (user?.role !== 'DONOR') {
+    if (String(user?.role || '').toUpperCase() !== 'DONOR') {
       setDonationError('Only donor accounts can complete QR contributions.');
       return;
     }

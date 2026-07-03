@@ -22,6 +22,14 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+const normalizeUser = (user) => {
+  if (!user) return null;
+  return {
+    ...user,
+    role: String(user.role || '').trim().toUpperCase()
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +38,7 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.get('/auth/profile');
       if (res.data.success) {
-        setUser(res.data.user);
+        setUser(normalizeUser(res.data.user));
       } else {
         logout();
       }
@@ -54,9 +62,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await api.post('/auth/login', { email, password });
       if (res.data.success) {
+        const userData = normalizeUser(res.data.user);
         localStorage.setItem('token', res.data.token);
-        setUser(res.data.user);
-        return { success: true, user: res.data.user };
+        setUser(userData);
+        return { success: true, user: userData };
       }
     } catch (err) {
       return {
@@ -72,7 +81,7 @@ export const AuthProvider = ({ children }) => {
       if (res.data.success) {
         return {
           success: true,
-          user: res.data.user,
+          user: normalizeUser(res.data.user),
           message: res.data.message || 'Registration successful. Please sign in.'
         };
       }
@@ -97,7 +106,7 @@ export const AuthProvider = ({ children }) => {
         }
       });
       if (res.data.success) {
-        setUser(res.data.user);
+        setUser(normalizeUser(res.data.user));
         return { success: true };
       }
     } catch (err) {

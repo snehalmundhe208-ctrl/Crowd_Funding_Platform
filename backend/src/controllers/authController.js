@@ -23,7 +23,7 @@ const serializeUser = (user) => ({
   id: user.id,
   email: user.email,
   name: user.name,
-  role: user.role,
+  role: user.role ? String(user.role).toUpperCase() : user.role,
   avatar: user.avatar,
   isVerified: user.isVerified,
   kycStatus: user.kyc?.status || null,

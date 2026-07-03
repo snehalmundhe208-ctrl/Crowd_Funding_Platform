@@ -47,8 +47,14 @@ app.use(express.urlencoded({ extended: true }));
 // Static Assets
 const uploadDir = process.env.UPLOAD_PATH || 'uploads/';
 const receiptsDir = 'receipts/';
-app.use('/uploads', express.static(path.join(__dirname, '../', uploadDir)));
-app.use('/receipts', express.static(path.join(__dirname, '../', receiptsDir)));
+const resolvedUploadDir = path.isAbsolute(uploadDir)
+  ? uploadDir
+  : path.join(__dirname, '../', uploadDir);
+const resolvedReceiptsDir = path.isAbsolute(receiptsDir)
+  ? receiptsDir
+  : path.join(__dirname, '../', receiptsDir);
+app.use('/uploads', express.static(resolvedUploadDir));
+app.use('/receipts', express.static(resolvedReceiptsDir));
 
 // REST Route Endpoints
 app.use('/api/auth', authRoutes);

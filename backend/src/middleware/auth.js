@@ -36,7 +36,10 @@ const protect = async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'Your account has been suspended. Please contact administration.' });
     }
 
-    req.user = user;
+    req.user = {
+      ...user,
+      role: String(user.role || '').trim().toUpperCase()
+    };
     next();
   } catch (error) {
     logger.error('Authentication error: %o', error);
@@ -46,7 +49,10 @@ const protect = async (req, res, next) => {
 
 const restrictTo = (...roles) => {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    const userRole = String(req.user?.role || '').toUpperCase();
+    const allowedRoles = roles.map((role) => String(role || '').toUpperCase());
+
+    if (!req.user || !allowedRoles.includes(userRole)) {
       return res.status(403).json({ 
         success: false, 
         error: `Access denied. Authorized roles: [${roles.join(', ')}]` 

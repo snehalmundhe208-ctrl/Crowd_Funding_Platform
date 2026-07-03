@@ -5,6 +5,11 @@ const { getUserGamification, refreshUserAchievements } = require('../utils/gamif
 const fs = require('fs');
 const path = require('path');
 
+const uploadDir = process.env.UPLOAD_PATH || 'uploads/';
+const resolvedUploadDir = path.isAbsolute(uploadDir)
+  ? uploadDir
+  : path.join(__dirname, '../../', uploadDir);
+
 const normalizeNotification = (notification) => ({
   ...notification,
   createdAt: notification.createdAt,
@@ -509,8 +514,8 @@ const getKycDocument = async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'Unauthorized to access this document.' });
     }
 
-    const relativePath = kyc.documentUrl.replace(/^\//, '');
-    const absolutePath = path.join(__dirname, '../../', relativePath);
+    const filename = path.basename(kyc.documentUrl);
+    const absolutePath = path.join(resolvedUploadDir, filename);
 
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({ success: false, error: 'KYC file missing on disk.' });
@@ -519,7 +524,7 @@ const getKycDocument = async (req, res, next) => {
     sendStoredFile({
       res,
       absolutePath,
-      downloadName: path.basename(relativePath),
+      downloadName: filename,
       inline
     });
   } catch (error) {

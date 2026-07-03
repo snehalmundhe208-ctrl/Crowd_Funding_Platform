@@ -38,7 +38,13 @@ const DonorDashboard = () => {
 
       const contentType = res.headers['content-type'] || 'application/octet-stream';
       const fileURL = URL.createObjectURL(new Blob([res.data], { type: contentType }));
-      window.open(fileURL, '_blank', 'noopener,noreferrer');
+      const link = document.createElement('a');
+      link.href = fileURL;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(fileURL), 60000);
     } catch (err) {
       console.error('File open failed', err);
