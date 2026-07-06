@@ -40,10 +40,20 @@ const createCampaign = async (req, res, next) => {
       }
     }
 
-    const { title, description, goalAmount, categoryId, deadline, rewards } = req.body;
+    const { title: rawTitle, description: rawDescription, goalAmount, categoryId, deadline, rewards } = req.body;
+    const title = rawTitle?.trim();
+    const description = rawDescription?.trim();
 
     if (!title || !description || !goalAmount || !categoryId || !deadline) {
       return res.status(400).json({ success: false, error: 'Missing required campaign fields.' });
+    }
+
+    if (isNaN(Number(goalAmount)) || Number(goalAmount) <= 0) {
+      return res.status(400).json({ success: false, error: 'Goal amount must be a positive number.' });
+    }
+
+    if (isNaN(new Date(deadline).getTime()) || new Date(deadline) <= new Date()) {
+      return res.status(400).json({ success: false, error: 'Deadline must be a valid date in the future.' });
     }
 
     if (!req.file) {
@@ -72,6 +82,22 @@ const createCampaign = async (req, res, next) => {
 
     if (!Array.isArray(rewardTiers) || rewardTiers.length === 0) {
       return res.status(400).json({ success: false, error: 'At least one reward tier is required.' });
+    }
+
+    for (const tier of rewardTiers) {
+      if (typeof tier.title === 'string') tier.title = tier.title.trim();
+      if (typeof tier.description === 'string') tier.description = tier.description.trim();
+
+      if (
+        !tier.title ||
+        !tier.description ||
+        tier.minAmount === undefined ||
+        tier.minAmount === null ||
+        isNaN(Number(tier.minAmount)) ||
+        Number(tier.minAmount) <= 0
+      ) {
+        return res.status(400).json({ success: false, error: 'Each reward tier requires a title, description, and a positive minAmount.' });
+      }
     }
 
     // Prisma transaction to create campaign and reward tiers
@@ -142,24 +168,32 @@ const getCampaigns = async (req, res, next) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // Filter clauses
-    const where = {};
+    const where = {
+      AND: []
+    };
 
-    // Filter by title / description keyword
+    // Search
     if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } }
-      ];
+      where.AND.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } }
+        ]
+      });
     }
 
-    // Category filter
+    // Category (fixed: search and category filters no longer clobber each other)
     if (category) {
-      // accepts either slug or ID
-      where.OR = [
-        { categoryId: category },
-        { category: { slug: category } }
-      ];
+      where.AND.push({
+        OR: [
+          { categoryId: category },
+          { category: { slug: category } }
+        ]
+      });
+    }
+
+    if (where.AND.length === 0) {
+      delete where.AND;
     }
 
     const authHeader = req.headers.authorization;
@@ -169,9 +203,13 @@ const getCampaigns = async (req, res, next) => {
       try {
         const token = authHeader.split(' ')[1];
         const decoded = require('jsonwebtoken').verify(token, getJwtSecret());
+
         requestingUser = await prisma.user.findUnique({
           where: { id: decoded.id },
-          select: { id: true, role: true }
+          select: {
+            id: true,
+            role: true
+          }
         });
       } catch (err) {
         requestingUser = null;
@@ -180,7 +218,6 @@ const getCampaigns = async (req, res, next) => {
 
     const isAdmin = requestingUser?.role === 'ADMIN';
 
-    // Status filter
     if (status && isAdmin) {
       where.status = status;
     } else if (status === 'COMPLETED' || status === 'EXPIRED') {
@@ -189,19 +226,19 @@ const getCampaigns = async (req, res, next) => {
       where.status = 'ACTIVE';
     }
 
-    // Sorting clauses
-    let orderBy = { createdAt: 'desc' }; // default newest
+    let orderBy = { createdAt: 'desc' };
+
     if (sort === 'newest') {
       orderBy = { createdAt: 'desc' };
     } else if (sort === 'mostFunded') {
       orderBy = { raisedAmount: 'desc' };
     } else if (sort === 'endingSoon') {
       orderBy = { deadline: 'asc' };
-      // only active ending soon
       where.deadline = { gte: new Date() };
     }
 
     const total = await prisma.campaign.count({ where });
+
     const campaigns = await prisma.campaign.findMany({
       where,
       include: {
@@ -225,17 +262,19 @@ const getCampaigns = async (req, res, next) => {
       take: limitNum
     });
 
-    // Compute dynamic trust scores for listed campaigns
-    const campaignsWithScores = await Promise.all(campaigns.map(async (c) => {
-      const score = await calculateCampaignTrustScore(c.id);
-      return {
-        ...c,
-        trustScore: score,
-        raisedAmount: Number(c.raisedAmount),
-        goalAmount: Number(c.goalAmount),
-        donationsCount: c.donations.length
-      };
-    }));
+    const campaignsWithScores = await Promise.all(
+      campaigns.map(async (c) => {
+        const score = await calculateCampaignTrustScore(c.id);
+
+        return {
+          ...c,
+          trustScore: score,
+          raisedAmount: Number(c.raisedAmount),
+          goalAmount: Number(c.goalAmount),
+          donationsCount: c.donations.length
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,
@@ -298,8 +337,7 @@ const getCampaignDetails = async (req, res, next) => {
                 name: true,
                 avatar: true
               }
-            }
-          ,
+            },
             replies: {
               include: {
                 user: {
@@ -370,7 +408,7 @@ const getCampaignDetails = async (req, res, next) => {
       try {
         const token = req.headers.authorization.split(' ')[1];
         const decoded = require('jsonwebtoken').verify(token, getJwtSecret());
-        
+
         const like = await prisma.like.findUnique({
           where: { campaignId_userId: { campaignId: id, userId: decoded.id } }
         });
@@ -488,7 +526,20 @@ const getCampaignDetails = async (req, res, next) => {
 const updateCampaign = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title, description, categoryId } = req.body;
+    const rawTitle = req.body.title;
+    const rawDescription = req.body.description;
+    const { categoryId } = req.body;
+
+    const title = rawTitle !== undefined ? rawTitle.trim() : undefined;
+    const description = rawDescription !== undefined ? rawDescription.trim() : undefined;
+
+    if (title !== undefined && title.length === 0) {
+      return res.status(400).json({ success: false, error: 'Title cannot be empty.' });
+    }
+
+    if (description !== undefined && description.length === 0) {
+      return res.status(400).json({ success: false, error: 'Description cannot be empty.' });
+    }
 
     const campaign = await prisma.campaign.findUnique({
       where: { id }
@@ -500,6 +551,13 @@ const updateCampaign = async (req, res, next) => {
 
     if (campaign.creatorId !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ success: false, error: 'Unauthorized to edit this campaign.' });
+    }
+
+    if (categoryId) {
+      const category = await prisma.category.findUnique({ where: { id: categoryId } });
+      if (!category) {
+        return res.status(400).json({ success: false, error: 'Invalid Category selected.' });
+      }
     }
 
     let imageUrl = campaign.imageUrl;
@@ -546,9 +604,9 @@ const deleteCampaign = async (req, res, next) => {
     }
 
     if (Number(campaign.raisedAmount) > 0 && req.user.role !== 'ADMIN') {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Campaign has already received donations and cannot be deleted.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Campaign has already received donations and cannot be deleted.'
       });
     }
 
