@@ -15,6 +15,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 
 // Config CORS
+// NOTE: allowedOrigins is kept here (unused for now) so it's ready to swap
+// back in once CORS is confirmed working. See the commented block below.
 const allowedOrigins = Array.from(new Set([
   ...(process.env.CLIENT_URL
     ? process.env.CLIENT_URL.split(",").map(origin => origin.trim()).filter(Boolean)
@@ -23,21 +25,31 @@ const allowedOrigins = Array.from(new Set([
   "http://127.0.0.1:5173"
 ]));
 
+// --- DEBUG MODE: single permissive CORS config ---
 app.use(cors({
   origin: true,
   credentials: true,
 }));
 
-app.options("*", cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-}));
+// --- PRODUCTION MODE (restore once CORS is confirmed working): ---
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     if (!origin || allowedOrigins.includes(origin)) {
+//       callback(null, true);
+//     } else {
+//       callback(new Error("Not allowed by CORS"));
+//     }
+//   },
+//   credentials: true,
+// }));
+
+app.use((req, res, next) => {
+  console.log("Origin:", req.headers.origin || "No Origin");
+  console.log("Method:", req.method);
+  console.log("URL:", req.originalUrl);
+  next();
+});
+
 // Logger HTTP Requests
 app.use(morgan('dev', {
   stream: {
