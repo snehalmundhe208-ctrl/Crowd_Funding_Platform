@@ -16,21 +16,28 @@ const app = express();
 
 // Config CORS
 const allowedOrigins = Array.from(new Set([
-  ...(process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map(origin => origin.trim()).filter(Boolean) : []),
-  'http://localhost:5173',
-  'http://127.0.0.1:5173'
+  ...(process.env.CLIENT_URL
+    ? process.env.CLIENT_URL.split(",").map(origin => origin.trim()).filter(Boolean)
+    : []),
+  "http://localhost:5173",
+  "http://127.0.0.1:5173"
 ]));
+
 app.use(cors({
-  origin: [
-    process.env.CLIENT_URL,
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
-  ],
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
 }));
 
-app.options('*', cors());
-
+app.options("*", cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
 // Logger HTTP Requests
 app.use(morgan('dev', {
   stream: {
