@@ -760,7 +760,7 @@ const addComment = async (req, res, next) => {
       }
     }
 
-    if (campaign.creatorId !== req.user.id) {
+    if (!parentId && campaign.creatorId !== req.user.id) {
       await prisma.notification.create({
         data: {
           userId: campaign.creatorId,

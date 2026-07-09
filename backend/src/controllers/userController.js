@@ -4,6 +4,8 @@ const { calculateCampaignTrustScore, calculateUserTrustScore } = require('../uti
 const { getUserGamification, refreshUserAchievements } = require('../utils/gamification');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const cloudinary = require('../config/cloudinary');
 
 const uploadDir = process.env.UPLOAD_PATH || 'uploads/';
 const resolvedUploadDir = path.isAbsolute(uploadDir)
@@ -30,6 +32,42 @@ const sendStoredFile = ({ res, absolutePath, downloadName, inline = false }) => 
   fs.createReadStream(absolutePath).pipe(res);
 };
 
+// KYC documents now live permanently on Cloudinary. This streams the remote
+// file back through our own authenticated endpoint so the frontend keeps
+// using the same protected route/URL shape as before.
+const streamRemoteFile = ({ res, remoteUrl, downloadName, inline = false }) => {
+  https.get(remoteUrl, (remoteRes) => {
+    if (remoteRes.statusCode !== 200) {
+      res.status(404).json({ success: false, error: 'KYC file could not be retrieved from storage.' });
+      remoteRes.resume();
+      return;
+    }
+    res.setHeader('Content-Type', getMimeType(downloadName));
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename=${downloadName}`);
+    remoteRes.pipe(res);
+  }).on('error', () => {
+    res.status(502).json({ success: false, error: 'Failed to fetch KYC file from storage.' });
+  });
+};
+
+const uploadKycToCloudinary = (fileBuffer, originalName) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'kyc_documents',
+        resource_type: 'auto',
+        use_filename: true,
+        unique_filename: true
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(fileBuffer);
+  });
+};
+
 const submitKyc = async (req, res, next) => {
   try {
     if (req.user.role !== 'CREATOR') {
@@ -45,7 +83,15 @@ const submitKyc = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Document type is required.' });
     }
 
-    const documentUrl = `/uploads/${req.file.filename}`;
+    let cloudinaryResult;
+    try {
+      cloudinaryResult = await uploadKycToCloudinary(req.file.buffer, req.file.originalname);
+    } catch (uploadError) {
+      logger.error('Cloudinary KYC upload failed: %o', uploadError);
+      return res.status(502).json({ success: false, error: 'Failed to store KYC document. Please try again.' });
+    }
+
+    const documentUrl = cloudinaryResult.secure_url;
 
     const existingKyc = await prisma.kyc.findUnique({
       where: { userId: req.user.id }
@@ -515,6 +561,20 @@ const getKycDocument = async (req, res, next) => {
     }
 
     const filename = path.basename(kyc.documentUrl);
+
+    if (/^https?:\/\//i.test(kyc.documentUrl)) {
+      // New Cloudinary-backed KYC document.
+      streamRemoteFile({
+        res,
+        remoteUrl: kyc.documentUrl,
+        downloadName: filename,
+        inline
+      });
+      return;
+    }
+
+    // Backward compatibility for KYC records submitted before the migration
+    // to Cloudinary, whose files may still exist on local disk.
     const absolutePath = path.join(resolvedUploadDir, filename);
 
     if (!fs.existsSync(absolutePath)) {

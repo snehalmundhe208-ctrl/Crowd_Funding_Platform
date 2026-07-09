@@ -196,11 +196,6 @@ const CampaignDetails = () => {
   const handleDonationSubmit = async () => {
     const amountValue = Number(donationAmount);
 
-    if (String(user?.role || '').toUpperCase() !== 'DONOR') {
-      setDonationError('Only donor accounts can complete QR contributions.');
-      return;
-    }
-
     if (!amountValue || amountValue <= 0) {
       setDonationError('Enter a valid contribution amount.');
       return;

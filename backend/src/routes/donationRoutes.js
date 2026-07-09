@@ -8,7 +8,7 @@ const router = express.Router();
 router.get('/leaderboard', donationController.getLeaderboard);
 
 // Protected routes
-router.post('/', protect, restrictTo('DONOR'), donationController.donate);
+router.post('/', protect, restrictTo('DONOR', 'CREATOR', 'ADMIN'), donationController.donate);
 router.get('/history', protect, restrictTo('DONOR'), donationController.getMyDonationHistory);
 router.get('/receipts/:receiptId/download', protect, donationController.downloadReceipt);
 router.get('/certificates/:certificateId/download', protect, donationController.downloadCertificate);
