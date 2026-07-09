@@ -4,7 +4,8 @@ import { api } from '../context/AuthContext';
 import ProgressBar from '../components/ProgressBar';
 import {
   Plus, Users, DollarSign, Rocket,
-  Send, BarChart2, CheckCircle2, ShieldCheck, Inbox, Bell, Award
+  Send, BarChart2, CheckCircle2, ShieldCheck, Inbox, Bell, Award,
+  Pencil, Trash2
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -40,6 +41,25 @@ const CreatorDashboard = () => {
   useEffect(() => {
     fetchCreatorData();
   }, []);
+
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+
+  const handleDeleteCampaign = async (campaignId, campaignTitle) => {
+    if (!window.confirm(`Delete "${campaignTitle}"? This cannot be undone.`)) {
+      return;
+    }
+    setDeleteError('');
+    setDeletingId(campaignId);
+    try {
+      await api.delete(`/campaigns/${campaignId}`);
+      fetchCreatorData();
+    } catch (err) {
+      setDeleteError(err.response?.data?.error || 'Failed to delete campaign.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleMarkNotificationRead = async (notificationId) => {
     try {
@@ -223,6 +243,12 @@ const CreatorDashboard = () => {
 
           {activeTab === 'campaigns' && (
             <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6 animate-fadeIn">
+              {deleteError && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-3.5 rounded-xl text-xs font-semibold mb-4">
+                  {deleteError}
+                </div>
+              )}
+
               {campaigns.length === 0 ? (
                 <div className="text-center py-16">
                   <Inbox className="w-12 h-12 text-textSecondary/35 mx-auto mb-4" />
@@ -259,6 +285,24 @@ const CreatorDashboard = () => {
                         </div>
 
                         <ProgressBar raised={camp.raisedAmount} goal={camp.goalAmount} />
+
+                        <div className="flex items-center gap-3 pt-1">
+                          <Link
+                            to={`/campaigns/${camp.id}/edit`}
+                            className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-hover"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </Link>
+                          <button
+                            onClick={() => handleDeleteCampaign(camp.id, camp.title)}
+                            disabled={deletingId === camp.id}
+                            className="flex items-center gap-1 text-[11px] font-bold text-rose-400 hover:text-rose-300 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{deletingId === camp.id ? 'Deleting...' : 'Delete'}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

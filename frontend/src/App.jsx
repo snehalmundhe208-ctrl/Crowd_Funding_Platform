@@ -13,6 +13,7 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const Profile = lazy(() => import('./pages/Profile'));
 const CampaignDetails = lazy(() => import('./pages/CampaignDetails'));
 const CreateCampaign = lazy(() => import('./pages/CreateCampaign'));
+const EditCampaign = lazy(() => import('./pages/EditCampaign'));
 const DonorDashboard = lazy(() => import('./pages/DonorDashboard'));
 const CreatorDashboard = lazy(() => import('./pages/CreatorDashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
@@ -114,6 +115,15 @@ function App() {
                   } 
                 />
                 
+                <Route
+                  path="/campaigns/:id/edit"
+                  element={
+                    <ProtectedRoute allowedRoles={['CREATOR', 'ADMIN']}>
+                      <EditCampaign />
+                    </ProtectedRoute>
+                  }
+                />
+
                 <Route 
                   path="/kyc-verification" 
                   element={

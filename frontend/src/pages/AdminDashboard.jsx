@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../context/AuthContext';
 import { 
-  Users, BarChart2, ShieldCheck, Eye, RefreshCw 
+  Users, BarChart2, ShieldCheck, Eye, RefreshCw, Pencil, Trash2
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -136,6 +136,24 @@ const AdminDashboard = () => {
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to review campaign.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleDeleteCampaign = async (campaignId, campaignTitle) => {
+    if (!window.confirm(`Delete "${campaignTitle}"? This cannot be undone.`)) {
+      return;
+    }
+    setProcessingId(campaignId);
+    try {
+      const res = await api.delete(`/campaigns/${campaignId}`);
+      if (res.data.success) {
+        setMessage(res.data.message);
+        fetchStats();
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete campaign.');
     } finally {
       setProcessingId(null);
     }
@@ -586,26 +604,41 @@ const AdminDashboard = () => {
                           </span>
                         </td>
                         <td className="py-4 pl-4 text-right">
-                          {camp.status === 'PENDING' ? (
-                            <div className="inline-flex gap-2">
-                              <button
-                                onClick={() => handleReviewCampaign(camp.id, 'APPROVED')}
-                                disabled={processingId === camp.id}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleReviewCampaign(camp.id, 'REJECTED')}
-                                disabled={processingId === camp.id}
-                                className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-textSecondary/50 font-medium">Reviewed</span>
-                          )}
+                          <div className="inline-flex items-center gap-2">
+                            {camp.status === 'PENDING' && (
+                              <>
+                                <button
+                                  onClick={() => handleReviewCampaign(camp.id, 'APPROVED')}
+                                  disabled={processingId === camp.id}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => handleReviewCampaign(camp.id, 'REJECTED')}
+                                  disabled={processingId === camp.id}
+                                  className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            <Link
+                              to={`/campaigns/${camp.id}/edit`}
+                              className="flex items-center gap-1 text-primary hover:text-primary-hover font-bold text-[10px] px-2 py-1.5"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </Link>
+                            <button
+                              onClick={() => handleDeleteCampaign(camp.id, camp.title)}
+                              disabled={processingId === camp.id}
+                              className="flex items-center gap-1 text-rose-400 hover:text-rose-300 font-bold text-[10px] px-2 py-1.5 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

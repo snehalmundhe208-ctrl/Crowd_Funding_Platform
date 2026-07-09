@@ -3963,3 +3963,4 @@ s{"level":"info","message":"Server is running on port 5000 in development mode."
 {"level":"info","message":"\u001b[0mGET /api/users/notifications \u001b[36m304\u001b[0m 11.807 ms - -\u001b[0m","service":"crowdfunding-service","timestamp":"2026-07-03 19:10:04"}
 {"level":"info","message":"\u001b[0mGET /api/users/notifications \u001b[36m304\u001b[0m 233.140 ms - -\u001b[0m","service":"crowdfunding-service","timestamp":"2026-07-03 19:10:49"}
 {"level":"info","message":"\u001b[0mGET /api/users/notifications \u001b[36m304\u001b[0m 15.467 ms - -\u001b[0m","service":"crowdfunding-service","timestamp":"2026-07-03 19:11:34"}
+{"level":"info","message":"Server is running on port 5000 in development mode.","service":"crowdfunding-service","timestamp":"2026-07-09 15:13:00"}
