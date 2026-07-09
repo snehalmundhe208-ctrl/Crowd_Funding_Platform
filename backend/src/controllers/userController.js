@@ -521,6 +521,24 @@ const getDashboardMetrics = async (req, res, next) => {
         take: 10
       });
 
+      // Full Contribution History (all donations received on this creator's
+      // campaigns) used by the Contribution History table, with the linked
+      // receipt/certificate for each row - same shape as the Donor Dashboard.
+      const contributionHistory = await prisma.donation.findMany({
+        where: { campaignId: { in: campaignIds } },
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              title: true
+            }
+          },
+          receipt: true,
+          certificate: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
       // Group monthly fundraising for charts
       const donationsAll = await prisma.donation.findMany({
         where: { campaignId: { in: campaignIds } },
@@ -585,6 +603,10 @@ const getDashboardMetrics = async (req, res, next) => {
         ...donation,
         amount: Number(donation.amount)
       }));
+      const normalizedContributionHistory = contributionHistory.map((donation) => ({
+        ...donation,
+        amount: Number(donation.amount)
+      }));
       const activityFeed = [
         ...normalizedRecentDonations.map((donation) => ({
           id: `donation-${donation.id}`,
@@ -618,20 +640,19 @@ const getDashboardMetrics = async (req, res, next) => {
           badgesCount: badges.length,
           bookmarksCount: personalCollections.bookmarks.length,
           followingCount: personalCollections.followedCreators.length,
-          certificatesCount: personalCollections.certificates.length,
-          receiptsCount: personalCollections.receipts.length
+          certificatesCount: normalizedContributionHistory.filter((d) => d.certificate).length,
+          receiptsCount: normalizedContributionHistory.filter((d) => d.receipt).length
         },
         campaigns: normalizedCampaigns,
         recentDonations: normalizedRecentDonations,
+        donations: normalizedContributionHistory,
         monthlyFundraising,
         badges: badges.map(b => b.badge),
         notifications: notifications.map(normalizeNotification),
         gamification,
         activityFeed,
         bookmarks: personalCollections.bookmarks,
-        followedCreators: personalCollections.followedCreators,
-        certificates: personalCollections.certificates,
-        receipts: personalCollections.receipts
+        followedCreators: personalCollections.followedCreators
       });
     } else if (userRole === 'ADMIN') {
       // Admin's personal collections (an admin account can still bookmark
@@ -644,19 +665,39 @@ const getDashboardMetrics = async (req, res, next) => {
         take: 20
       });
 
+      // Platform-wide Contribution History: admins oversee every donation,
+      // so unlike Donor/Creator this is not scoped to the admin's own
+      // account - it covers every donation with its linked receipt/certificate.
+      const allDonations = await prisma.donation.findMany({
+        include: {
+          campaign: {
+            select: {
+              id: true,
+              title: true
+            }
+          },
+          receipt: true,
+          certificate: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      const normalizedAllDonations = allDonations.map((donation) => ({
+        ...donation,
+        amount: Number(donation.amount)
+      }));
+
       res.status(200).json({
         success: true,
         role: 'ADMIN',
         metrics: {
           bookmarksCount: personalCollections.bookmarks.length,
           followingCount: personalCollections.followedCreators.length,
-          certificatesCount: personalCollections.certificates.length,
-          receiptsCount: personalCollections.receipts.length
+          certificatesCount: normalizedAllDonations.filter((d) => d.certificate).length,
+          receiptsCount: normalizedAllDonations.filter((d) => d.receipt).length
         },
         bookmarks: personalCollections.bookmarks,
         followedCreators: personalCollections.followedCreators,
-        certificates: personalCollections.certificates,
-        receipts: personalCollections.receipts,
+        donations: normalizedAllDonations,
         notifications: notifications.map(normalizeNotification)
       });
     } else {
