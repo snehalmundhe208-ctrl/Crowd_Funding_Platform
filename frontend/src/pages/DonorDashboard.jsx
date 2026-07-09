@@ -4,7 +4,8 @@ import { api } from '../context/AuthContext';
 import CampaignCard from '../components/CampaignCard';
 import {
   Heart, Bookmark, DollarSign, Award, Clock,
-  Download, ArrowRight, UserCheck, Inbox, Bell, ShieldCheck, Activity, Sparkles
+  Download, ArrowRight, UserCheck, Inbox, ShieldCheck, Activity, Sparkles,
+  FileText, Receipt as ReceiptIcon
 } from 'lucide-react';
 
 const DonorDashboard = () => {
@@ -38,27 +39,12 @@ const DonorDashboard = () => {
 
       const contentType = res.headers['content-type'] || 'application/octet-stream';
       const fileURL = URL.createObjectURL(new Blob([res.data], { type: contentType }));
-      const link = document.createElement('a');
-      link.href = fileURL;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      window.open(fileURL, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(fileURL), 60000);
     } catch (err) {
       console.error('File open failed', err);
     } finally {
       setDownloadingId(null);
-    }
-  };
-
-  const handleMarkNotificationRead = async (notificationId) => {
-    try {
-      await api.put(`/users/notifications/${notificationId}/read`);
-      fetchDashboardData();
-    } catch (err) {
-      console.error(err);
     }
   };
 
@@ -73,7 +59,7 @@ const DonorDashboard = () => {
 
   if (!data) return null;
 
-  const { metrics, donations, bookmarks, followedCreators, badges = [], notifications = [], gamification, activityFeed = [] } = data;
+  const { metrics, donations, bookmarks, followedCreators, certificates = [], receipts = [], badges = [], gamification, activityFeed = [] } = data;
 
   return (
     <div className="space-y-10 pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 bg-darkbg">
@@ -359,22 +345,56 @@ const DonorDashboard = () => {
 
           <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
             <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
-              <Bell className="w-5 h-5 text-primary" />
-              <span>Notifications</span>
+              <FileText className="w-5 h-5 text-primary" />
+              <span>My Certificates</span>
             </h3>
-            {notifications.length === 0 ? (
-              <p className="text-xs text-textSecondary text-center py-6">No notifications.</p>
+            {certificates.length === 0 ? (
+              <p className="text-xs text-textSecondary text-center py-6">No certificates yet.</p>
             ) : (
               <div className="space-y-3">
-                {notifications.slice(0, 6).map((notification) => (
-                  <div key={notification.id} className={`border rounded-xl p-3 ${notification.isRead ? 'border-darkborder/40' : 'border-primary/30 bg-primary/5'}`}>
-                    <span className="block text-xs font-bold text-textPrimary">{notification.title}</span>
-                    <span className="block text-[10px] text-textSecondary mt-1">{notification.message}</span>
-                    {!notification.isRead && (
-                      <button onClick={() => handleMarkNotificationRead(notification.id)} className="text-[10px] font-bold text-primary mt-2">
-                        Mark as read
-                      </button>
-                    )}
+                {certificates.slice(0, 6).map((certificate) => (
+                  <div key={certificate.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold text-textPrimary truncate">{certificate.campaignTitle}</span>
+                      <span className="block text-[10px] text-textSecondary mt-1">${Number(certificate.amount).toFixed(2)} · {new Date(certificate.donationDate).toLocaleDateString()}</span>
+                    </div>
+                    <button
+                      onClick={() => openProtectedFile(`/donations/certificates/${certificate.id}/download?inline=true`, `certificate-${certificate.id}`)}
+                      disabled={downloadingId === `certificate-${certificate.id}`}
+                      className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{downloadingId === `certificate-${certificate.id}` ? '...' : 'PDF'}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+            <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+              <ReceiptIcon className="w-5 h-5 text-primary" />
+              <span>My Receipts</span>
+            </h3>
+            {receipts.length === 0 ? (
+              <p className="text-xs text-textSecondary text-center py-6">No receipts yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {receipts.slice(0, 6).map((receipt) => (
+                  <div key={receipt.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="block text-xs font-bold text-textPrimary truncate">{receipt.campaignTitle}</span>
+                      <span className="block text-[10px] text-textSecondary mt-1">${Number(receipt.amount).toFixed(2)} · {new Date(receipt.donationDate).toLocaleDateString()}</span>
+                    </div>
+                    <button
+                      onClick={() => openProtectedFile(`/donations/receipts/${receipt.id}/download?inline=true`, `receipt-${receipt.id}`)}
+                      disabled={downloadingId === `receipt-${receipt.id}`}
+                      className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{downloadingId === `receipt-${receipt.id}` ? '...' : 'PDF'}</span>
+                    </button>
                   </div>
                 ))}
               </div>

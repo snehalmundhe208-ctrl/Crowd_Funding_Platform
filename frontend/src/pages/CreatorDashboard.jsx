@@ -2,17 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../context/AuthContext';
 import ProgressBar from '../components/ProgressBar';
+import CampaignCard from '../components/CampaignCard';
 import {
   Plus, Users, DollarSign, Rocket,
-  Send, BarChart2, CheckCircle2, ShieldCheck, Inbox, Bell, Award,
-  Pencil, Trash2
+  Send, BarChart2, CheckCircle2, ShieldCheck, Inbox, Award,
+  Bookmark, UserCheck, FileText, Receipt as ReceiptIcon, Download
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const CreatorDashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('campaigns'); // campaigns, publishUpdate
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [activeTab, setActiveTab] = useState('campaigns'); // campaigns, publishUpdate, myActivity
   
   // Update state
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
@@ -42,31 +44,18 @@ const CreatorDashboard = () => {
     fetchCreatorData();
   }, []);
 
-  const [deletingId, setDeletingId] = useState(null);
-  const [deleteError, setDeleteError] = useState('');
-
-  const handleDeleteCampaign = async (campaignId, campaignTitle) => {
-    if (!window.confirm(`Delete "${campaignTitle}"? This cannot be undone.`)) {
-      return;
-    }
-    setDeleteError('');
-    setDeletingId(campaignId);
+  const openProtectedFile = async (url, loadingId) => {
+    setDownloadingId(loadingId);
     try {
-      await api.delete(`/campaigns/${campaignId}`);
-      fetchCreatorData();
+      const res = await api.get(url, { responseType: 'blob' });
+      const contentType = res.headers['content-type'] || 'application/octet-stream';
+      const fileURL = URL.createObjectURL(new Blob([res.data], { type: contentType }));
+      window.open(fileURL, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(fileURL), 60000);
     } catch (err) {
-      setDeleteError(err.response?.data?.error || 'Failed to delete campaign.');
+      console.error('File open failed', err);
     } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleMarkNotificationRead = async (notificationId) => {
-    try {
-      await api.put(`/users/notifications/${notificationId}/read`);
-      fetchCreatorData();
-    } catch (err) {
-      console.error(err);
+      setDownloadingId(null);
     }
   };
 
@@ -109,7 +98,10 @@ const CreatorDashboard = () => {
 
   if (!data) return null;
 
-  const { metrics, campaigns, recentDonations, monthlyFundraising, badges = [], notifications = [], gamification } = data;
+  const {
+    metrics, campaigns, recentDonations, monthlyFundraising, badges = [], gamification,
+    bookmarks = [], followedCreators = [], certificates = [], receipts = []
+  } = data;
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
   const serverBase = API_URL.replace('/api', '');
 
@@ -239,16 +231,18 @@ const CreatorDashboard = () => {
             >
               Post Project Update
             </button>
+            <button 
+              onClick={() => setActiveTab('myActivity')}
+              className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === 'myActivity' ? 'bg-primary text-white' : 'bg-darksurface text-textSecondary'
+              }`}
+            >
+              My Activity
+            </button>
           </div>
 
           {activeTab === 'campaigns' && (
             <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6 animate-fadeIn">
-              {deleteError && (
-                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 p-3.5 rounded-xl text-xs font-semibold mb-4">
-                  {deleteError}
-                </div>
-              )}
-
               {campaigns.length === 0 ? (
                 <div className="text-center py-16">
                   <Inbox className="w-12 h-12 text-textSecondary/35 mx-auto mb-4" />
@@ -285,24 +279,6 @@ const CreatorDashboard = () => {
                         </div>
 
                         <ProgressBar raised={camp.raisedAmount} goal={camp.goalAmount} />
-
-                        <div className="flex items-center gap-3 pt-1">
-                          <Link
-                            to={`/campaigns/${camp.id}/edit`}
-                            className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-hover"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>Edit</span>
-                          </Link>
-                          <button
-                            onClick={() => handleDeleteCampaign(camp.id, camp.title)}
-                            disabled={deletingId === camp.id}
-                            className="flex items-center gap-1 text-[11px] font-bold text-rose-400 hover:text-rose-300 disabled:opacity-50"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>{deletingId === camp.id ? 'Deleting...' : 'Delete'}</span>
-                          </button>
-                        </div>
                       </div>
                     </div>
                   ))}
@@ -384,6 +360,137 @@ const CreatorDashboard = () => {
             </div>
           )}
 
+          {activeTab === 'myActivity' && (
+            <div className="space-y-8 animate-fadeIn">
+
+              {/* Bookmarks */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-textPrimary flex items-center gap-2">
+                  <Bookmark className="w-5 h-5 text-blue-400" />
+                  <span>Bookmarks</span>
+                </h3>
+                {bookmarks.length === 0 ? (
+                  <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6 text-center py-10">
+                    <Bookmark className="w-8 h-8 text-textSecondary/35 mx-auto mb-3" />
+                    <p className="text-sm text-textSecondary">No bookmarked campaigns.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {bookmarks.map((c) => (
+                      <CampaignCard key={c.id} campaign={c} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Following */}
+              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-accent" />
+                  <span>Following</span>
+                </h3>
+                {followedCreators.length === 0 ? (
+                  <p className="text-xs text-textSecondary text-center py-8">You are not following any creators.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {followedCreators.map((creator) => {
+                      const avatar = creator.avatar ? (creator.avatar.startsWith('http') ? creator.avatar : `${serverBase}${creator.avatar}`) : null;
+                      return (
+                        <div key={creator.id} className="flex items-center justify-between border-b border-darkborder/30 pb-3 last:border-b-0 last:pb-0">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full overflow-hidden border border-darkborder shrink-0">
+                              {avatar ? (
+                                <img src={avatar} alt={creator.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-darkborder flex items-center justify-center text-xs font-bold text-textSecondary">
+                                  {creator.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-textPrimary">{creator.name}</span>
+                                {creator.isVerified && <Award className="w-3.5 h-3.5 text-primary fill-primary/10" />}
+                              </div>
+                              <span className="text-[10px] text-textSecondary">Verified Creator</span>
+                            </div>
+                          </div>
+                          <Link
+                            to={`/`}
+                            className="text-[10px] font-bold bg-darkborder/50 border border-darkborder text-textPrimary px-3 py-1.5 rounded-lg hover:bg-darkborder transition-colors"
+                          >
+                            View Projects
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* My Certificates */}
+              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  <span>My Certificates</span>
+                </h3>
+                {certificates.length === 0 ? (
+                  <p className="text-xs text-textSecondary text-center py-6">No certificates yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {certificates.map((certificate) => (
+                      <div key={certificate.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-textPrimary truncate">{certificate.campaignTitle}</span>
+                          <span className="block text-[10px] text-textSecondary mt-1">${Number(certificate.amount).toFixed(2)} · {new Date(certificate.donationDate).toLocaleDateString()}</span>
+                        </div>
+                        <button
+                          onClick={() => openProtectedFile(`/donations/certificates/${certificate.id}/download?inline=true`, `certificate-${certificate.id}`)}
+                          disabled={downloadingId === `certificate-${certificate.id}`}
+                          className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{downloadingId === `certificate-${certificate.id}` ? '...' : 'PDF'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* My Receipts */}
+              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+                  <ReceiptIcon className="w-5 h-5 text-primary" />
+                  <span>My Receipts</span>
+                </h3>
+                {receipts.length === 0 ? (
+                  <p className="text-xs text-textSecondary text-center py-6">No receipts yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {receipts.map((receipt) => (
+                      <div key={receipt.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-textPrimary truncate">{receipt.campaignTitle}</span>
+                          <span className="block text-[10px] text-textSecondary mt-1">${Number(receipt.amount).toFixed(2)} · {new Date(receipt.donationDate).toLocaleDateString()}</span>
+                        </div>
+                        <button
+                          onClick={() => openProtectedFile(`/donations/receipts/${receipt.id}/download?inline=true`, `receipt-${receipt.id}`)}
+                          disabled={downloadingId === `receipt-${receipt.id}`}
+                          className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{downloadingId === `receipt-${receipt.id}` ? '...' : 'PDF'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
         </div>
 
         {/* Right Column (Recent Contributions list) */}
@@ -438,29 +545,6 @@ const CreatorDashboard = () => {
             )}
           </div>
 
-          <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-1.5">
-              <Bell className="w-5 h-5 text-primary" />
-              <span>Notifications</span>
-            </h3>
-            {notifications.length === 0 ? (
-              <p className="text-xs text-textSecondary text-center py-6">No notifications.</p>
-            ) : (
-              <div className="space-y-3">
-                {notifications.slice(0, 6).map((notification) => (
-                  <div key={notification.id} className={`border rounded-xl p-3 ${notification.isRead ? 'border-darkborder/40' : 'border-primary/30 bg-primary/5'}`}>
-                    <span className="block text-xs font-bold text-textPrimary">{notification.title}</span>
-                    <span className="block text-[10px] text-textSecondary mt-1">{notification.message}</span>
-                    {!notification.isRead && (
-                      <button onClick={() => handleMarkNotificationRead(notification.id)} className="text-[10px] font-bold text-primary mt-2">
-                        Mark as read
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
       </div>
