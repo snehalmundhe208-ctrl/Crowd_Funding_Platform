@@ -4,6 +4,9 @@ const { calculateCampaignTrustScore, calculateUserTrustScore } = require('../uti
 const { getUserGamification, refreshUserAchievements } = require('../utils/gamification');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 
 const normalizeNotification = (notification) => ({
   ...notification,
@@ -101,6 +104,38 @@ const sendStoredFile = ({ res, absolutePath, downloadName, inline = false }) => 
   res.setHeader('Content-Type', getMimeType(absolutePath));
   res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename=${downloadName}`);
   fs.createReadStream(absolutePath).pipe(res);
+};
+
+// Whether a stored documentUrl points at a remote host (e.g. a Cloudinary
+// delivery URL) rather than a path on our own local /uploads disk storage.
+const isRemoteUrl = (value) => /^https?:\/\//i.test(value);
+
+// Streams a remote file (e.g. a Cloudinary-hosted KYC document) back through
+// our own protected route, so the existing auth/permission check in
+// getKycDocument still gates access instead of exposing the raw Cloudinary
+// URL directly to the client.
+const streamRemoteFile = ({ res, next, remoteUrl, downloadName, inline = false }) => {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(remoteUrl);
+  } catch (err) {
+    return res.status(502).json({ success: false, error: 'Stored KYC document URL is invalid.' });
+  }
+
+  const client = parsedUrl.protocol === 'http:' ? http : https;
+
+  const request = client.get(parsedUrl, (remoteRes) => {
+    if (remoteRes.statusCode && remoteRes.statusCode >= 400) {
+      remoteRes.resume();
+      return res.status(502).json({ success: false, error: 'Failed to fetch KYC document from storage provider.' });
+    }
+
+    res.setHeader('Content-Type', remoteRes.headers['content-type'] || getMimeType(parsedUrl.pathname));
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename=${downloadName}`);
+    remoteRes.pipe(res);
+  });
+
+  request.on('error', (err) => next(err));
 };
 
 const submitKyc = async (req, res, next) => {
@@ -647,6 +682,21 @@ const getKycDocument = async (req, res, next) => {
 
     if (req.user.role !== 'ADMIN' && kyc.userId !== req.user.id) {
       return res.status(403).json({ success: false, error: 'Unauthorized to access this document.' });
+    }
+
+    if (isRemoteUrl(kyc.documentUrl)) {
+      // Document was stored as a full URL (e.g. Cloudinary) rather than a
+      // local /uploads path. Proxy it through this same protected route so
+      // it still opens for "View Doc" instead of being treated as a local
+      // file path.
+      const remoteName = path.basename(new URL(kyc.documentUrl).pathname) || 'document';
+      return streamRemoteFile({
+        res,
+        next,
+        remoteUrl: kyc.documentUrl,
+        downloadName: remoteName,
+        inline
+      });
     }
 
     const relativePath = kyc.documentUrl.replace(/^\//, '');
