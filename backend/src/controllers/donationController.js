@@ -261,19 +261,11 @@ const getReceiptRecord = async (receiptId) => prisma.receipt.findUnique({
   include: {
     donation: {
       include: {
-        donor: true,
-        campaign: {
-          select: { creatorId: true }
-        }
+        donor: true
       }
     }
   }
 });
-
-const canAccessDonationFile = (donation, user) =>
-  donation.donorId === user.id ||
-  user.role === 'ADMIN' ||
-  donation.campaign?.creatorId === user.id;
 
 const downloadReceipt = async (req, res, next) => {
   try {
@@ -286,9 +278,8 @@ const downloadReceipt = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Receipt not found.' });
     }
 
-    // Verify user owns this receipt, is an admin, or is the creator of the
-    // campaign the donation was made to.
-    if (!canAccessDonationFile(receipt.donation, req.user)) {
+    // Verify user owns this receipt (or is admin)
+    if (receipt.donation.donorId !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ success: false, error: 'Unauthorized to download this receipt.' });
     }
 
@@ -320,10 +311,7 @@ const downloadCertificate = async (req, res, next) => {
       include: {
         donation: {
           include: {
-            donor: true,
-            campaign: {
-              select: { creatorId: true }
-            }
+            donor: true
           }
         }
       }
@@ -333,7 +321,7 @@ const downloadCertificate = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Certificate not found.' });
     }
 
-    if (!canAccessDonationFile(certificate.donation, req.user)) {
+    if (certificate.donation.donorId !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ success: false, error: 'Unauthorized to download this certificate.' });
     }
 

@@ -6,7 +6,7 @@ import CampaignCard from '../components/CampaignCard';
 import {
   Plus, Users, DollarSign, Rocket,
   Send, BarChart2, CheckCircle2, ShieldCheck, Inbox, Award,
-  Bookmark, UserCheck, Download
+  Bookmark, UserCheck, FileText, Receipt as ReceiptIcon, Download
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -100,7 +100,7 @@ const CreatorDashboard = () => {
 
   const {
     metrics, campaigns, recentDonations, monthlyFundraising, badges = [], gamification,
-    bookmarks = [], followedCreators = [], donations = []
+    bookmarks = [], followedCreators = [], certificates = [], receipts = []
   } = data;
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
   const serverBase = API_URL.replace('/api', '');
@@ -428,73 +428,62 @@ const CreatorDashboard = () => {
                 )}
               </div>
 
-              {/* Contribution History */}
-              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6 space-y-6">
-                <h3 className="text-lg font-bold text-textPrimary">Contribution History</h3>
-
-                {donations.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Inbox className="w-10 h-10 text-textSecondary/40 mx-auto mb-3" />
-                    <p className="text-sm text-textSecondary">No contributions have been received on your campaigns yet.</p>
-                  </div>
+              {/* My Certificates */}
+              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  <span>My Certificates</span>
+                </h3>
+                {certificates.length === 0 ? (
+                  <p className="text-xs text-textSecondary text-center py-6">No certificates yet.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b border-darkborder/50 text-textSecondary uppercase font-bold tracking-wider">
-                          <th className="pb-3 pr-4">Campaign</th>
-                          <th className="pb-3 px-4">Date</th>
-                          <th className="pb-3 px-4">Amount</th>
-                          <th className="pb-3 px-4 text-right">Receipt</th>
-                          <th className="pb-3 pl-4 text-right">Certificate</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {donations.map((don) => (
-                          <tr key={don.id} className="border-b border-darkborder/30 last:border-b-0 hover:bg-darkborder/10 transition-colors">
-                            <td className="py-4 pr-4 font-bold text-textPrimary max-w-[200px] truncate">
-                              <Link to={`/campaigns/${don.campaign.id}`} className="hover:text-primary">
-                                {don.campaign.title}
-                              </Link>
-                            </td>
-                            <td className="py-4 px-4 text-textSecondary">
-                              {new Date(don.createdAt).toLocaleDateString()}
-                            </td>
-                            <td className="py-4 px-4 font-extrabold text-textPrimary">
-                              ${Number(don.amount).toFixed(2)}
-                            </td>
-                            <td className="py-4 px-4 text-right">
-                              {don.receipt ? (
-                                <button
-                                  onClick={() => openProtectedFile(`/donations/receipts/${don.receipt.id}/download?inline=true`, `receipt-${don.receipt.id}`)}
-                                  disabled={downloadingId === `receipt-${don.receipt.id}`}
-                                  className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>{downloadingId === `receipt-${don.receipt.id}` ? 'Loading...' : 'PDF'}</span>
-                                </button>
-                              ) : (
-                                <span className="text-textSecondary/50 font-medium">N/A</span>
-                              )}
-                            </td>
-                            <td className="py-4 pl-4 text-right">
-                              {don.certificate ? (
-                                <button
-                                  onClick={() => openProtectedFile(`/donations/certificates/${don.certificate.id}/download?inline=true`, `certificate-${don.certificate.id}`)}
-                                  disabled={downloadingId === `certificate-${don.certificate.id}`}
-                                  className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>{downloadingId === `certificate-${don.certificate.id}` ? 'Loading...' : 'PDF'}</span>
-                                </button>
-                              ) : (
-                                <span className="text-textSecondary/50 font-medium">N/A</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-3">
+                    {certificates.map((certificate) => (
+                      <div key={certificate.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-textPrimary truncate">{certificate.campaignTitle}</span>
+                          <span className="block text-[10px] text-textSecondary mt-1">${Number(certificate.amount).toFixed(2)} · {new Date(certificate.donationDate).toLocaleDateString()}</span>
+                        </div>
+                        <button
+                          onClick={() => openProtectedFile(`/donations/certificates/${certificate.id}/download?inline=true`, `certificate-${certificate.id}`)}
+                          disabled={downloadingId === `certificate-${certificate.id}`}
+                          className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{downloadingId === `certificate-${certificate.id}` ? '...' : 'PDF'}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* My Receipts */}
+              <div className="bg-white card-shadow border border-darkborder rounded-2xl p-6">
+                <h3 className="text-lg font-bold text-textPrimary mb-6 flex items-center gap-2">
+                  <ReceiptIcon className="w-5 h-5 text-primary" />
+                  <span>My Receipts</span>
+                </h3>
+                {receipts.length === 0 ? (
+                  <p className="text-xs text-textSecondary text-center py-6">No receipts yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {receipts.map((receipt) => (
+                      <div key={receipt.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-textPrimary truncate">{receipt.campaignTitle}</span>
+                          <span className="block text-[10px] text-textSecondary mt-1">${Number(receipt.amount).toFixed(2)} · {new Date(receipt.donationDate).toLocaleDateString()}</span>
+                        </div>
+                        <button
+                          onClick={() => openProtectedFile(`/donations/receipts/${receipt.id}/download?inline=true`, `receipt-${receipt.id}`)}
+                          disabled={downloadingId === `receipt-${receipt.id}`}
+                          className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>{downloadingId === `receipt-${receipt.id}` ? '...' : 'PDF'}</span>
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
