@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../context/AuthContext';
 import { 
-  Users, BarChart2, ShieldCheck, Eye, RefreshCw, Pencil, Trash2, Download, ArrowRight, Inbox
+  Users, BarChart2, ShieldCheck, Eye, RefreshCw,
+  Bookmark, UserCheck, FileText, Receipt as ReceiptIcon, Download, Award
 } from 'lucide-react';
+import CampaignCard from '../components/CampaignCard';
 import {
   ResponsiveContainer,
   BarChart,
@@ -21,32 +23,31 @@ import {
 const AdminDashboard = () => {
   const [data, setData] = useState(null);
   const [logs, setLogs] = useState([]);
-  const [notifications, setNotifications] = useState([]);
+  const [myActivity, setMyActivity] = useState(null);
+  const [myActivityLoading, setMyActivityLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
   
   // Actions states
   const [processingId, setProcessingId] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectingKycId, setRejectingKycId] = useState(null);
 
-  const openProtectedFile = async (url) => {
+  const openProtectedFile = async (url, loadingId) => {
+    if (loadingId) setDownloadingId(loadingId);
     try {
       const res = await api.get(url, { responseType: 'blob' });
       const contentType = res.headers['content-type'] || 'application/octet-stream';
       const blobUrl = URL.createObjectURL(new Blob([res.data], { type: contentType }));
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to open document.');
+    } finally {
+      if (loadingId) setDownloadingId(null);
     }
   };
 
@@ -75,14 +76,17 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchNotifications = async () => {
+  const fetchMyActivity = async () => {
+    setMyActivityLoading(true);
     try {
-      const res = await api.get('/users/notifications');
+      const res = await api.get('/users/dashboard');
       if (res.data.success) {
-        setNotifications(res.data.notifications);
+        setMyActivity(res.data);
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setMyActivityLoading(false);
     }
   };
 
@@ -94,8 +98,8 @@ const AdminDashboard = () => {
     if (activeTab === 'logs') {
       fetchLogs();
     }
-    if (activeTab === 'notifications') {
-      fetchNotifications();
+    if (activeTab === 'myActivity') {
+      fetchMyActivity();
     }
   }, [activeTab]);
 
@@ -141,24 +145,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleDeleteCampaign = async (campaignId, campaignTitle) => {
-    if (!window.confirm(`Delete "${campaignTitle}"? This cannot be undone.`)) {
-      return;
-    }
-    setProcessingId(campaignId);
-    try {
-      const res = await api.delete(`/campaigns/${campaignId}`);
-      if (res.data.success) {
-        setMessage(res.data.message);
-        fetchStats();
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to delete campaign.');
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   const handleReviewReport = async (reportId, action) => {
     setProcessingId(reportId);
     try {
@@ -189,20 +175,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleMarkNotificationRead = async (notificationId) => {
-    setProcessingId(notificationId);
-    try {
-      const res = await api.put(`/users/notifications/${notificationId}/read`);
-      if (res.data.success) {
-        await fetchNotifications();
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to mark notification as read.');
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-darkbg flex flex-col justify-center items-center">
@@ -214,7 +186,7 @@ const AdminDashboard = () => {
 
   if (!data) return null;
 
-  const { stats, users, campaigns, reports, kycReviews, monthlyFundraising = [], campaignsByStatus = [], usersByRole = [], myDonations = [] } = data;
+  const { stats, users, campaigns, reports, kycReviews, monthlyFundraising = [], campaignsByStatus = [], usersByRole = [] } = data;
 
   return (
     <div className="space-y-10 pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 bg-darkbg">
@@ -345,12 +317,12 @@ const AdminDashboard = () => {
           )}
         </button>
         <button 
-          onClick={() => setActiveTab('notifications')}
+          onClick={() => setActiveTab('myActivity')}
           className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'notifications' ? 'bg-primary text-white' : 'bg-darksurface text-textSecondary'
+            activeTab === 'myActivity' ? 'bg-primary text-white' : 'bg-darksurface text-textSecondary'
           }`}
         >
-          Notifications
+          My Activity
         </button>
         <button 
           onClick={() => setActiveTab('logs')}
@@ -359,14 +331,6 @@ const AdminDashboard = () => {
           }`}
         >
           Audit logs Trail
-        </button>
-        <button 
-          onClick={() => setActiveTab('contributionHistory')}
-          className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'contributionHistory' ? 'bg-primary text-white' : 'bg-darksurface text-textSecondary'
-          }`}
-        >
-          Contribution History
         </button>
       </div>
 
@@ -612,41 +576,26 @@ const AdminDashboard = () => {
                           </span>
                         </td>
                         <td className="py-4 pl-4 text-right">
-                          <div className="inline-flex items-center gap-2">
-                            {camp.status === 'PENDING' && (
-                              <>
-                                <button
-                                  onClick={() => handleReviewCampaign(camp.id, 'APPROVED')}
-                                  disabled={processingId === camp.id}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={() => handleReviewCampaign(camp.id, 'REJECTED')}
-                                  disabled={processingId === camp.id}
-                                  className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            )}
-                            <Link
-                              to={`/campaigns/${camp.id}/edit`}
-                              className="flex items-center gap-1 text-primary hover:text-primary-hover font-bold text-[10px] px-2 py-1.5"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                              <span>Edit</span>
-                            </Link>
-                            <button
-                              onClick={() => handleDeleteCampaign(camp.id, camp.title)}
-                              disabled={processingId === camp.id}
-                              className="flex items-center gap-1 text-rose-400 hover:text-rose-300 font-bold text-[10px] px-2 py-1.5 disabled:opacity-50"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          </div>
+                          {camp.status === 'PENDING' ? (
+                            <div className="inline-flex gap-2">
+                              <button
+                                onClick={() => handleReviewCampaign(camp.id, 'APPROVED')}
+                                disabled={processingId === camp.id}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleReviewCampaign(camp.id, 'REJECTED')}
+                                disabled={processingId === camp.id}
+                                className="bg-red-500 hover:bg-red-600 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-textSecondary/50 font-medium">Reviewed</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -823,106 +772,131 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'contributionHistory' && (
-          <div className="space-y-6 animate-fadeIn">
-            <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider">Contribution History</h3>
-
-            {myDonations.length === 0 ? (
-              <div className="text-center py-12">
-                <Inbox className="w-10 h-10 text-textSecondary/40 mx-auto mb-3" />
-                <p className="text-sm text-textSecondary">You haven't made any contributions yet.</p>
-                <Link to="/" className="mt-4 inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline">
-                  <span>Explore campaigns</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+        {activeTab === 'myActivity' && (
+          <div className="space-y-8 animate-fadeIn">
+            {myActivityLoading || !myActivity ? (
+              <div className="flex flex-col items-center py-12">
+                <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <p className="mt-3 text-xs text-textSecondary">Loading your personal activity...</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-darkborder/50 text-textSecondary uppercase font-bold tracking-wider">
-                      <th className="pb-3 pr-4">Campaign</th>
-                      <th className="pb-3 px-4">Date</th>
-                      <th className="pb-3 px-4">Amount</th>
-                      <th className="pb-3 px-4 text-right">Receipt</th>
-                      <th className="pb-3 pl-4 text-right">Certificate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myDonations.map((don) => (
-                      <tr key={don.id} className="border-b border-darkborder/30 last:border-b-0 hover:bg-darkbg/25">
-                        <td className="py-4 pr-4 font-bold text-textPrimary max-w-[200px] truncate">
-                          <Link to={`/campaigns/${don.campaignId}`} className="hover:text-primary">
-                            {don.campaign.title}
-                          </Link>
-                        </td>
-                        <td className="py-4 px-4 text-textSecondary">
-                          {new Date(don.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="py-4 px-4 font-extrabold text-textPrimary">
-                          ${Number(don.amount).toFixed(2)}
-                        </td>
-                        <td className="py-4 px-4 text-right">
-                          {don.receipt ? (
-                            <button
-                              onClick={() => openProtectedFile(`/donations/receipts/${don.receipt.id}/download?inline=true`)}
-                              className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>PDF</span>
-                            </button>
-                          ) : (
-                            <span className="text-textSecondary/50 font-medium">N/A</span>
-                          )}
-                        </td>
-                        <td className="py-4 pl-4 text-right">
-                          {don.certificate ? (
-                            <button
-                              onClick={() => openProtectedFile(`/donations/certificates/${don.certificate.id}/download?inline=true`)}
-                              className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1"
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              <span>PDF</span>
-                            </button>
-                          ) : (
-                            <span className="text-textSecondary/50 font-medium">N/A</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'notifications' && (
-          <div className="space-y-6">
-            <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider">Administrative Notifications</h3>
-            {notifications.length === 0 ? (
-              <p className="text-xs text-textSecondary text-center py-8">No notifications available.</p>
-            ) : (
-              <div className="space-y-3">
-                {notifications.map((notification) => (
-                  <div key={notification.id} className="border border-darkborder/40 rounded-xl p-4 flex items-start justify-between gap-4">
-                    <div>
-                      <span className="block text-xs font-bold text-textPrimary">{notification.title}</span>
-                      <span className="block text-[10px] text-textSecondary mt-1">{notification.message}</span>
-                      <span className="block text-[10px] text-textSecondary/80 mt-2">{new Date(notification.createdAt).toLocaleString()}</span>
+              <>
+                {/* Bookmarks */}
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider border-b border-darkborder/50 pb-2 flex items-center gap-2">
+                    <Bookmark className="w-4 h-4 text-blue-400" />
+                    <span>Bookmarks</span>
+                  </h3>
+                  {(myActivity.bookmarks || []).length === 0 ? (
+                    <p className="text-xs text-textSecondary text-center py-8">No bookmarked campaigns.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {myActivity.bookmarks.map((c) => (
+                        <CampaignCard key={c.id} campaign={c} />
+                      ))}
                     </div>
-                    {!notification.isRead && (
-                      <button
-                        onClick={() => handleMarkNotificationRead(notification.id)}
-                        disabled={processingId === notification.id}
-                        className="bg-primary hover:bg-primary-hover text-white font-bold px-3 py-1.5 rounded-lg text-[10px] disabled:opacity-50"
-                      >
-                        Read
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+
+                {/* Following */}
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider border-b border-darkborder/50 pb-2 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-accent" />
+                    <span>Following</span>
+                  </h3>
+                  {(myActivity.followedCreators || []).length === 0 ? (
+                    <p className="text-xs text-textSecondary text-center py-8">You are not following any creators.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {myActivity.followedCreators.map((creator) => {
+                        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+                        const serverBase = API_URL.replace('/api', '');
+                        const avatar = creator.avatar ? (creator.avatar.startsWith('http') ? creator.avatar : `${serverBase}${creator.avatar}`) : null;
+                        return (
+                          <div key={creator.id} className="flex items-center gap-3 border border-darkborder/40 rounded-xl p-3">
+                            <div className="w-9 h-9 rounded-full overflow-hidden border border-darkborder shrink-0">
+                              {avatar ? (
+                                <img src={avatar} alt={creator.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-darkborder flex items-center justify-center text-xs font-bold text-textSecondary">
+                                  {creator.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-textPrimary">{creator.name}</span>
+                                {creator.isVerified && <Award className="w-3.5 h-3.5 text-primary fill-primary/10" />}
+                              </div>
+                              <span className="text-[10px] text-textSecondary">Verified Creator</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* My Certificates */}
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider border-b border-darkborder/50 pb-2 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span>My Certificates</span>
+                  </h3>
+                  {(myActivity.certificates || []).length === 0 ? (
+                    <p className="text-xs text-textSecondary text-center py-8">No certificates yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {myActivity.certificates.map((certificate) => (
+                        <div key={certificate.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="block text-xs font-bold text-textPrimary truncate">{certificate.campaignTitle}</span>
+                            <span className="block text-[10px] text-textSecondary mt-1">${Number(certificate.amount).toFixed(2)} · {new Date(certificate.donationDate).toLocaleDateString()}</span>
+                          </div>
+                          <button
+                            onClick={() => openProtectedFile(`/donations/certificates/${certificate.id}/download?inline=true`, `certificate-${certificate.id}`)}
+                            disabled={downloadingId === `certificate-${certificate.id}`}
+                            className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>{downloadingId === `certificate-${certificate.id}` ? '...' : 'PDF'}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* My Receipts */}
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm text-textPrimary uppercase tracking-wider border-b border-darkborder/50 pb-2 flex items-center gap-2">
+                    <ReceiptIcon className="w-4 h-4 text-primary" />
+                    <span>My Receipts</span>
+                  </h3>
+                  {(myActivity.receipts || []).length === 0 ? (
+                    <p className="text-xs text-textSecondary text-center py-8">No receipts yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {myActivity.receipts.map((receipt) => (
+                        <div key={receipt.id} className="border border-darkborder/40 rounded-xl p-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="block text-xs font-bold text-textPrimary truncate">{receipt.campaignTitle}</span>
+                            <span className="block text-[10px] text-textSecondary mt-1">${Number(receipt.amount).toFixed(2)} · {new Date(receipt.donationDate).toLocaleDateString()}</span>
+                          </div>
+                          <button
+                            onClick={() => openProtectedFile(`/donations/receipts/${receipt.id}/download?inline=true`, `receipt-${receipt.id}`)}
+                            disabled={downloadingId === `receipt-${receipt.id}`}
+                            className="text-primary hover:text-primary-hover font-bold inline-flex items-center gap-1 disabled:opacity-50 text-[10px] shrink-0"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>{downloadingId === `receipt-${receipt.id}` ? '...' : 'PDF'}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         )}

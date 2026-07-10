@@ -294,28 +294,6 @@ const getAdminDashboardStats = async (req, res, next) => {
     });
     const totalRaised = Number(donationsSum._sum.amount) || 0;
 
-    // This admin's own contributions (Admin accounts can also donate), with
-    // receipts/certificates, for the dashboard's Contribution History section.
-    const myDonations = await prisma.donation.findMany({
-      where: { donorId: req.user.id },
-      include: {
-        campaign: {
-          select: {
-            id: true,
-            title: true,
-            imageUrl: true
-          }
-        },
-        receipt: true,
-        certificate: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    const normalizedMyDonations = myDonations.map((donation) => ({
-      ...donation,
-      amount: Number(donation.amount)
-    }));
-
     // Review counts
     const pendingCampaigns = await prisma.campaign.count({ where: { status: 'PENDING' } });
     const pendingKyc = await prisma.kyc.count({ where: { status: 'PENDING' } });
@@ -415,51 +393,6 @@ const getAdminDashboardStats = async (req, res, next) => {
       ? Math.round((successfulCampaignsCount / completedCampaigns.length) * 100)
       : 0;
 
-    // Platform-wide archives for monitoring purposes.
-    const bookmarks = await prisma.bookmark.findMany({
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-        campaign: { select: { id: true, title: true } }
-      },
-      orderBy: { id: 'desc' },
-      take: 100
-    });
-
-    const follows = await prisma.follow.findMany({
-      include: {
-        follower: { select: { id: true, name: true, email: true } },
-        creator: { select: { id: true, name: true, email: true } }
-      },
-      orderBy: { id: 'desc' },
-      take: 100
-    });
-
-    const receiptsArchive = await prisma.receipt.findMany({
-      include: {
-        donation: {
-          include: {
-            donor: { select: { id: true, name: true, email: true } },
-            campaign: { select: { id: true, title: true } }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    });
-
-    const certificatesArchive = await prisma.contributionCertificate.findMany({
-      include: {
-        donation: {
-          include: {
-            donor: { select: { id: true, name: true, email: true } },
-            campaign: { select: { id: true, title: true } }
-          }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100
-    });
-
     res.status(200).json({
       success: true,
       stats: {
@@ -482,12 +415,7 @@ const getAdminDashboardStats = async (req, res, next) => {
       kycReviews,
       monthlyFundraising,
       campaignsByStatus,
-      usersByRole,
-      bookmarks,
-      follows,
-      receiptsArchive,
-      certificatesArchive,
-      myDonations: normalizedMyDonations
+      usersByRole
     });
 
   } catch (error) {

@@ -5,18 +5,92 @@ const { getUserGamification, refreshUserAchievements } = require('../utils/gamif
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const cloudinary = require('../config/cloudinary');
-
-const uploadDir = process.env.UPLOAD_PATH || 'uploads/';
-const resolvedUploadDir = path.isAbsolute(uploadDir)
-  ? uploadDir
-  : path.join(__dirname, '../../', uploadDir);
+const http = require('http');
+const { URL } = require('url');
 
 const normalizeNotification = (notification) => ({
   ...notification,
   createdAt: notification.createdAt,
   readAt: notification.readAt
 });
+
+// Shared helper: fetches a user's personal Bookmarks, Following, Certificates
+// and Receipts collections. Used by the DONOR, CREATOR and ADMIN dashboard
+// branches so every role can see these sections according to their own data.
+const getPersonalCollections = async (userId) => {
+  const bookmarks = await prisma.bookmark.findMany({
+    where: { userId },
+    include: {
+      campaign: {
+        include: {
+          creator: {
+            select: { id: true, name: true, isVerified: true }
+          },
+          category: true,
+          donations: {
+            select: { id: true }
+          }
+        }
+      }
+    }
+  });
+
+  const followedCreators = await prisma.follow.findMany({
+    where: { followerId: userId },
+    include: {
+      creator: {
+        select: { id: true, name: true, avatar: true, isVerified: true }
+      }
+    }
+  });
+
+  const myDonationsWithFiles = await prisma.donation.findMany({
+    where: { donorId: userId },
+    include: {
+      campaign: { select: { id: true, title: true } },
+      receipt: true,
+      certificate: true
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  const normalizedBookmarks = await Promise.all(
+    bookmarks.map(async (bookmark) => ({
+      ...bookmark.campaign,
+      trustScore: await calculateCampaignTrustScore(bookmark.campaign.id),
+      goalAmount: Number(bookmark.campaign.goalAmount),
+      raisedAmount: Number(bookmark.campaign.raisedAmount),
+      donationsCount: bookmark.campaign.donations.length
+    }))
+  );
+
+  const certificates = myDonationsWithFiles
+    .filter((donation) => donation.certificate)
+    .map((donation) => ({
+      ...donation.certificate,
+      campaignId: donation.campaign.id,
+      campaignTitle: donation.campaign.title,
+      amount: Number(donation.amount),
+      donationDate: donation.createdAt
+    }));
+
+  const receipts = myDonationsWithFiles
+    .filter((donation) => donation.receipt)
+    .map((donation) => ({
+      ...donation.receipt,
+      campaignId: donation.campaign.id,
+      campaignTitle: donation.campaign.title,
+      amount: Number(donation.amount),
+      donationDate: donation.createdAt
+    }));
+
+  return {
+    bookmarks: normalizedBookmarks,
+    followedCreators: followedCreators.map((f) => f.creator),
+    certificates,
+    receipts
+  };
+};
 
 const getMimeType = (absolutePath) => {
   const extension = path.extname(absolutePath).toLowerCase();
@@ -32,40 +106,36 @@ const sendStoredFile = ({ res, absolutePath, downloadName, inline = false }) => 
   fs.createReadStream(absolutePath).pipe(res);
 };
 
-// KYC documents now live permanently on Cloudinary. This streams the remote
-// file back through our own authenticated endpoint so the frontend keeps
-// using the same protected route/URL shape as before.
-const streamRemoteFile = ({ res, remoteUrl, downloadName, inline = false }) => {
-  https.get(remoteUrl, (remoteRes) => {
-    if (remoteRes.statusCode !== 200) {
-      res.status(404).json({ success: false, error: 'KYC file could not be retrieved from storage.' });
+// Whether a stored documentUrl points at a remote host (e.g. a Cloudinary
+// delivery URL) rather than a path on our own local /uploads disk storage.
+const isRemoteUrl = (value) => /^https?:\/\//i.test(value);
+
+// Streams a remote file (e.g. a Cloudinary-hosted KYC document) back through
+// our own protected route, so the existing auth/permission check in
+// getKycDocument still gates access instead of exposing the raw Cloudinary
+// URL directly to the client.
+const streamRemoteFile = ({ res, next, remoteUrl, downloadName, inline = false }) => {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(remoteUrl);
+  } catch (err) {
+    return res.status(502).json({ success: false, error: 'Stored KYC document URL is invalid.' });
+  }
+
+  const client = parsedUrl.protocol === 'http:' ? http : https;
+
+  const request = client.get(parsedUrl, (remoteRes) => {
+    if (remoteRes.statusCode && remoteRes.statusCode >= 400) {
       remoteRes.resume();
-      return;
+      return res.status(502).json({ success: false, error: 'Failed to fetch KYC document from storage provider.' });
     }
-    res.setHeader('Content-Type', getMimeType(downloadName));
+
+    res.setHeader('Content-Type', remoteRes.headers['content-type'] || getMimeType(parsedUrl.pathname));
     res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename=${downloadName}`);
     remoteRes.pipe(res);
-  }).on('error', () => {
-    res.status(502).json({ success: false, error: 'Failed to fetch KYC file from storage.' });
   });
-};
 
-const uploadKycToCloudinary = (fileBuffer, originalName) => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'kyc_documents',
-        resource_type: 'auto',
-        use_filename: true,
-        unique_filename: true
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    stream.end(fileBuffer);
-  });
+  request.on('error', (err) => next(err));
 };
 
 const submitKyc = async (req, res, next) => {
@@ -83,15 +153,7 @@ const submitKyc = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Document type is required.' });
     }
 
-    let cloudinaryResult;
-    try {
-      cloudinaryResult = await uploadKycToCloudinary(req.file.buffer, req.file.originalname);
-    } catch (uploadError) {
-      logger.error('Cloudinary KYC upload failed: %o', uploadError);
-      return res.status(502).json({ success: false, error: 'Failed to store KYC document. Please try again.' });
-    }
-
-    const documentUrl = cloudinaryResult.secure_url;
+    const documentUrl = `/uploads/${req.file.filename}`;
 
     const existingKyc = await prisma.kyc.findUnique({
       where: { userId: req.user.id }
@@ -323,6 +385,27 @@ const getDashboardMetrics = async (req, res, next) => {
         ...donation,
         amount: Number(donation.amount)
       }));
+
+      // My Certificates & My Receipts (derived from own donations)
+      const certificates = normalizedDonations
+        .filter((donation) => donation.certificate)
+        .map((donation) => ({
+          ...donation.certificate,
+          campaignId: donation.campaign.id,
+          campaignTitle: donation.campaign.title,
+          amount: donation.amount,
+          donationDate: donation.createdAt
+        }));
+      const receipts = normalizedDonations
+        .filter((donation) => donation.receipt)
+        .map((donation) => ({
+          ...donation.receipt,
+          campaignId: donation.campaign.id,
+          campaignTitle: donation.campaign.title,
+          amount: donation.amount,
+          donationDate: donation.createdAt
+        }));
+
       const activityFeed = [
         ...normalizedDonations.slice(0, 10).map((donation) => ({
           id: `donation-${donation.id}`,
@@ -351,11 +434,15 @@ const getDashboardMetrics = async (req, res, next) => {
           bookmarksCount: bookmarks.length,
           followingCount: followedCreators.length,
           badgesCount: badges.length,
+          certificatesCount: certificates.length,
+          receiptsCount: receipts.length,
           trustScore: donorTrustScore
         },
         donations: normalizedDonations,
         bookmarks: normalizedBookmarks,
         followedCreators: followedCreators.map(f => f.creator),
+        certificates,
+        receipts,
         badges: badges.map(b => b.badge),
         notifications: notifications.map(normalizeNotification),
         gamification,
@@ -407,62 +494,6 @@ const getDashboardMetrics = async (req, res, next) => {
       // Followers
       const followersCount = await prisma.follow.count({
         where: { creatorId: userId }
-      });
-
-      // Creators/campaigns this user bookmarks or follows (a Creator account
-      // can also browse, bookmark, follow, and donate like any other user).
-      const bookmarks = await prisma.bookmark.findMany({
-        where: { userId },
-        include: {
-          campaign: {
-            include: {
-              creator: {
-                select: {
-                  id: true,
-                  name: true
-                }
-              },
-              category: true,
-              donations: {
-                select: {
-                  id: true
-                }
-              }
-            }
-          }
-        }
-      });
-
-      const followedCreators = await prisma.follow.findMany({
-        where: { followerId: userId },
-        include: {
-          creator: {
-            select: {
-              id: true,
-              name: true,
-              avatar: true,
-              isVerified: true
-            }
-          }
-        }
-      });
-
-      // This creator's own contributions (with receipts/certificates), in
-      // case they have also donated to other campaigns.
-      const ownDonations = await prisma.donation.findMany({
-        where: { donorId: userId },
-        include: {
-          campaign: {
-            select: {
-              id: true,
-              title: true,
-              imageUrl: true
-            }
-          },
-          receipt: true,
-          certificate: true
-        },
-        orderBy: { createdAt: 'desc' }
       });
 
       // Trust score
@@ -520,6 +551,9 @@ const getDashboardMetrics = async (req, res, next) => {
         take: 20
       });
 
+      // Bookmarks, Following, Certificates & Receipts for this creator's own account
+      const personalCollections = await getPersonalCollections(userId);
+
       const shares = await prisma.campaignShare.findMany({
         where: { campaign: { creatorId: userId } },
         include: {
@@ -548,19 +582,6 @@ const getDashboardMetrics = async (req, res, next) => {
         }))
       );
       const normalizedRecentDonations = recentDonations.map((donation) => ({
-        ...donation,
-        amount: Number(donation.amount)
-      }));
-      const normalizedBookmarks = await Promise.all(
-        bookmarks.map(async (bookmark) => ({
-          ...bookmark.campaign,
-          trustScore: await calculateCampaignTrustScore(bookmark.campaign.id),
-          goalAmount: Number(bookmark.campaign.goalAmount),
-          raisedAmount: Number(bookmark.campaign.raisedAmount),
-          donationsCount: bookmark.campaign.donations.length
-        }))
-      );
-      const normalizedOwnDonations = ownDonations.map((donation) => ({
         ...donation,
         amount: Number(donation.amount)
       }));
@@ -595,8 +616,10 @@ const getDashboardMetrics = async (req, res, next) => {
           successRate,
           trustScore,
           badgesCount: badges.length,
-          bookmarksCount: bookmarks.length,
-          followingCount: followedCreators.length
+          bookmarksCount: personalCollections.bookmarks.length,
+          followingCount: personalCollections.followedCreators.length,
+          certificatesCount: personalCollections.certificates.length,
+          receiptsCount: personalCollections.receipts.length
         },
         campaigns: normalizedCampaigns,
         recentDonations: normalizedRecentDonations,
@@ -605,9 +628,36 @@ const getDashboardMetrics = async (req, res, next) => {
         notifications: notifications.map(normalizeNotification),
         gamification,
         activityFeed,
-        bookmarks: normalizedBookmarks,
-        followedCreators: followedCreators.map(f => f.creator),
-        donations: normalizedOwnDonations
+        bookmarks: personalCollections.bookmarks,
+        followedCreators: personalCollections.followedCreators,
+        certificates: personalCollections.certificates,
+        receipts: personalCollections.receipts
+      });
+    } else if (userRole === 'ADMIN') {
+      // Admin's personal collections (an admin account can still bookmark
+      // campaigns / follow creators like any other user). Platform-wide
+      // stats continue to be served separately by /admin/stats.
+      const personalCollections = await getPersonalCollections(userId);
+      const notifications = await prisma.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20
+      });
+
+      res.status(200).json({
+        success: true,
+        role: 'ADMIN',
+        metrics: {
+          bookmarksCount: personalCollections.bookmarks.length,
+          followingCount: personalCollections.followedCreators.length,
+          certificatesCount: personalCollections.certificates.length,
+          receiptsCount: personalCollections.receipts.length
+        },
+        bookmarks: personalCollections.bookmarks,
+        followedCreators: personalCollections.followedCreators,
+        certificates: personalCollections.certificates,
+        receipts: personalCollections.receipts,
+        notifications: notifications.map(normalizeNotification)
       });
     } else {
       res.status(400).json({ success: false, error: 'Invalid user role context.' });
@@ -634,22 +684,23 @@ const getKycDocument = async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'Unauthorized to access this document.' });
     }
 
-    const filename = path.basename(kyc.documentUrl);
-
-    if (/^https?:\/\//i.test(kyc.documentUrl)) {
-      // New Cloudinary-backed KYC document.
-      streamRemoteFile({
+    if (isRemoteUrl(kyc.documentUrl)) {
+      // Document was stored as a full URL (e.g. Cloudinary) rather than a
+      // local /uploads path. Proxy it through this same protected route so
+      // it still opens for "View Doc" instead of being treated as a local
+      // file path.
+      const remoteName = path.basename(new URL(kyc.documentUrl).pathname) || 'document';
+      return streamRemoteFile({
         res,
+        next,
         remoteUrl: kyc.documentUrl,
-        downloadName: filename,
+        downloadName: remoteName,
         inline
       });
-      return;
     }
 
-    // Backward compatibility for KYC records submitted before the migration
-    // to Cloudinary, whose files may still exist on local disk.
-    const absolutePath = path.join(resolvedUploadDir, filename);
+    const relativePath = kyc.documentUrl.replace(/^\//, '');
+    const absolutePath = path.join(__dirname, '../../', relativePath);
 
     if (!fs.existsSync(absolutePath)) {
       return res.status(404).json({ success: false, error: 'KYC file missing on disk.' });
@@ -658,7 +709,7 @@ const getKycDocument = async (req, res, next) => {
     sendStoredFile({
       res,
       absolutePath,
-      downloadName: filename,
+      downloadName: path.basename(relativePath),
       inline
     });
   } catch (error) {
