@@ -161,8 +161,12 @@ const Home = () => {
             </Link>
           </div>
 
-          <img src="/src/assets/hero.svg" alt="Community" className="w-full max-w-md mx-auto mt-10 mb-4 animate-fadeInUp animate-float" style={{ animationDelay: '300ms' }} />
-
+<img
+  src="https://res.cloudinary.com/rcc16tqe/image/upload/v1783653636/hero_xjpvrf.svg"
+  alt="Community"
+  className="w-full max-w-md mx-auto mt-10 mb-4 animate-fadeInUp animate-float"
+  style={{ animationDelay: '300ms' }}
+/>
           {/* Quick Platform Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto pt-8 border-t border-darkborder/30">
             <div className="text-center p-3">
